@@ -1,21 +1,7 @@
-# Dependencies
-**/node_modules/
-
-# Environment variables
+node_modules/
 .env
 .env.*
-
-# Build output
-dist/
-dist-ssr/
-build/
-
-# Logs
+!.env.example
+frontend/dist/
+backend/dist/
 *.log
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# VS Code
-.vscode/
