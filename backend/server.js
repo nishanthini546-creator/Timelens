@@ -15,11 +15,9 @@ const goalRoutes = require("./routes/goalRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
 const analyticsRoutes = require("./routes/analyticsRoutes");
 
-
 const app = express();
 
 const PORT = process.env.PORT || 5000;
-
 
 /* ---------- Middleware ---------- */
 
@@ -32,7 +30,6 @@ app.use(
 );
 
 app.use(express.json());
-
 
 /* ---------- API Routes ---------- */
 
@@ -71,7 +68,6 @@ app.use(
   analyticsRoutes
 );
 
-
 /* ---------- Basic Server Route ---------- */
 
 app.get("/", (req, res) => {
@@ -81,7 +77,6 @@ app.get("/", (req, res) => {
       "TimeLens backend is running successfully!",
   });
 });
-
 
 /* ---------- Database Health Check ---------- */
 
@@ -116,7 +111,6 @@ app.get(
   }
 );
 
-
 /* ---------- Start Server ---------- */
 
 const startServer = async () => {
@@ -128,19 +122,18 @@ const startServer = async () => {
       "PostgreSQL connected successfully."
     );
 
-
     await createUsersTable();
 
     console.log(
       "Users table ready."
     );
 
-
     app.listen(
       PORT,
+      "0.0.0.0",
       () => {
         console.log(
-          `TimeLens backend running on http://localhost:${PORT}`
+          `TimeLens backend running on port ${PORT}`
         );
       }
     );
@@ -155,6 +148,5 @@ const startServer = async () => {
     process.exit(1);
   }
 };
-
 
 startServer();
