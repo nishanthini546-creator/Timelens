@@ -54,6 +54,8 @@ const isAllowedOrigin = (origin) => {
         host.endsWith(".onrender.com") ||
         host.endsWith(".vercel.app") ||
         host.endsWith(".railway.app") ||
+        host.endsWith(".koyeb.app") ||
+        host.endsWith(".hf.space") ||
         host.endsWith(".loca.lt") ||
         host.endsWith(".lhr.life") ||
         host.endsWith(".localhost.run")
