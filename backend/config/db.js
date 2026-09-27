@@ -40,16 +40,19 @@ function normalizeConnectionString(rawUrl) {
 
 const connectionString = normalizeConnectionString(process.env.DATABASE_URL);
 
-const isLocalDatabase =
+const isLocalOrInternalVpc =
   !connectionString ||
   connectionString.includes("@localhost") ||
   connectionString.includes("@127.0.0.1") ||
   connectionString.includes("//localhost") ||
-  connectionString.includes("//127.0.0.1");
+  connectionString.includes("//127.0.0.1") ||
+  (/@dpg-[a-z0-9-]+(?::\d+)?\//i.test(connectionString) &&
+    !connectionString.includes(".render.com"));
 
 const useSsl =
   process.env.DB_SSL === "true" ||
-  (!isLocalDatabase && process.env.DB_SSL !== "false");
+  connectionString?.includes("sslmode=require") ||
+  (!isLocalOrInternalVpc && process.env.DB_SSL !== "false");
 
 const pool = new Pool({
   connectionString,
