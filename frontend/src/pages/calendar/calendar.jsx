@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import {
@@ -14,140 +14,10 @@ import {
   LogOut,
 } from "lucide-react";
 
-const SAMPLE_CALENDAR_DATA = {
-  "2026-09-01": {
-    productivity: 72,
-    tasks: 4,
-    completed: 3,
-    productiveMinutes: 210,
-  },
-  "2026-09-02": {
-    productivity: 84,
-    tasks: 5,
-    completed: 5,
-    productiveMinutes: 265,
-  },
-  "2026-09-03": {
-    productivity: 91,
-    tasks: 6,
-    completed: 6,
-    productiveMinutes: 310,
-  },
-  "2026-09-04": {
-    productivity: 68,
-    tasks: 4,
-    completed: 3,
-    productiveMinutes: 180,
-  },
-  "2026-09-05": {
-    productivity: 56,
-    tasks: 3,
-    completed: 2,
-    productiveMinutes: 140,
-  },
-  "2026-09-07": {
-    productivity: 88,
-    tasks: 5,
-    completed: 5,
-    productiveMinutes: 285,
-  },
-  "2026-09-08": {
-    productivity: 76,
-    tasks: 5,
-    completed: 4,
-    productiveMinutes: 225,
-  },
-  "2026-09-09": {
-    productivity: 93,
-    tasks: 7,
-    completed: 7,
-    productiveMinutes: 330,
-  },
-  "2026-09-10": {
-    productivity: 81,
-    tasks: 5,
-    completed: 4,
-    productiveMinutes: 250,
-  },
-  "2026-09-11": {
-    productivity: 74,
-    tasks: 4,
-    completed: 3,
-    productiveMinutes: 205,
-  },
-  "2026-09-12": {
-    productivity: 62,
-    tasks: 4,
-    completed: 2,
-    productiveMinutes: 165,
-  },
-  "2026-09-14": {
-    productivity: 89,
-    tasks: 6,
-    completed: 6,
-    productiveMinutes: 300,
-  },
-  "2026-09-15": {
-    productivity: 95,
-    tasks: 7,
-    completed: 7,
-    productiveMinutes: 345,
-  },
-  "2026-09-16": {
-    productivity: 86,
-    tasks: 6,
-    completed: 5,
-    productiveMinutes: 275,
-  },
-  "2026-09-17": {
-    productivity: 78,
-    tasks: 5,
-    completed: 4,
-    productiveMinutes: 240,
-  },
-  "2026-09-18": {
-    productivity: 91,
-    tasks: 6,
-    completed: 6,
-    productiveMinutes: 320,
-  },
-  "2026-09-19": {
-    productivity: 70,
-    tasks: 4,
-    completed: 3,
-    productiveMinutes: 190,
-  },
-  "2026-09-21": {
-    productivity: 83,
-    tasks: 5,
-    completed: 4,
-    productiveMinutes: 260,
-  },
-  "2026-09-22": {
-    productivity: 92,
-    tasks: 6,
-    completed: 6,
-    productiveMinutes: 315,
-  },
-  "2026-09-23": {
-    productivity: 87,
-    tasks: 6,
-    completed: 5,
-    productiveMinutes: 285,
-  },
-  "2026-09-24": {
-    productivity: 79,
-    tasks: 5,
-    completed: 4,
-    productiveMinutes: 235,
-  },
-  "2026-09-25": {
-    productivity: 94,
-    tasks: 7,
-    completed: 7,
-    productiveMinutes: 340,
-  },
-};
+import {
+  getMonthlyAnalytics,
+  getWeeklyAnalytics,
+} from "../../services/api";
 
 const MONTH_NAMES = [
   "January",
@@ -179,13 +49,25 @@ function getIntensity(value) {
 }
 
 function formatHours(minutes) {
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
+  const safeMinutes = Math.max(0, Number(minutes || 0));
+  const hours = Math.floor(safeMinutes / 60);
+  const mins = safeMinutes % 60;
 
   if (hours === 0) return `${mins}m`;
   if (mins === 0) return `${hours}h`;
 
   return `${hours}h ${mins}m`;
+}
+
+function hasDayActivity(dayData) {
+  if (!dayData) return false;
+  return (
+    Number(dayData.tasks || 0) > 0 ||
+    Number(dayData.completed || 0) > 0 ||
+    Number(dayData.productiveMinutes || 0) > 0 ||
+    Number(dayData.digitalMinutes || 0) > 0 ||
+    Number(dayData.productivity || 0) > 0
+  );
 }
 
 export default function Calendar() {
@@ -205,8 +87,62 @@ export default function Calendar() {
     )
   );
 
+  const [calendarData, setCalendarData] = useState({});
+  const [weeklyScores, setWeeklyScores] = useState([0, 0, 0, 0, 0, 0, 0]);
+
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
+
+  useEffect(() => {
+    const token = localStorage.getItem("timelens_token");
+    if (!token) {
+      navigate("/auth");
+      return;
+    }
+
+    let isMounted = true;
+
+    async function loadMonthAndWeek() {
+      try {
+        const [monthRes, weekRes] = await Promise.all([
+          getMonthlyAnalytics(year, month + 1).catch(() => null),
+          getWeeklyAnalytics(selectedDate).catch(() => null),
+        ]);
+
+        if (!isMounted) return;
+
+        const daysMap = monthRes?.analytics?.days || {};
+        setCalendarData(daysMap);
+
+        const weekDays = weekRes?.analytics?.days || [];
+        if (weekDays.length > 0) {
+          const scores = [0, 1, 2, 3, 4, 5, 6].map((idx) => {
+            const d = weekDays[idx];
+            if (!d) return 0;
+            const prodMins = Number(d.productiveMinutes || 0);
+            const digMins = Number(d.digitalMinutes || 0);
+            const compRate = Number(d.completionRate || 0);
+            if (digMins > 0 && compRate > 0) {
+              return Math.min(100, Math.round((prodMins / digMins) * 50 + compRate * 0.5));
+            }
+            if (digMins > 0) {
+              return Math.min(100, Math.round((prodMins / digMins) * 100));
+            }
+            return Math.min(100, compRate);
+          });
+          setWeeklyScores(scores);
+        }
+      } catch (error) {
+        console.error("Failed to load calendar analytics:", error);
+      }
+    }
+
+    loadMonthAndWeek();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [year, month, selectedDate, navigate]);
 
   const calendarDays = useMemo(() => {
     const firstDay = new Date(year, month, 1).getDay();
@@ -246,18 +182,15 @@ export default function Calendar() {
     return days;
   }, [year, month]);
 
-  const selectedData = SAMPLE_CALENDAR_DATA[selectedDate];
+  const rawSelectedData = calendarData[selectedDate];
+  const selectedData = hasDayActivity(rawSelectedData) ? rawSelectedData : null;
 
-  const monthData = Object.entries(
-    SAMPLE_CALENDAR_DATA
-  ).filter(([date]) => {
-    const [dataYear, dataMonth] = date
-      .split("-")
-      .map(Number);
-
+  const monthData = Object.entries(calendarData).filter(([date, data]) => {
+    const [dataYear, dataMonth] = date.split("-").map(Number);
     return (
       dataYear === year &&
-      dataMonth === month + 1
+      dataMonth === month + 1 &&
+      hasDayActivity(data)
     );
   });
 
@@ -266,7 +199,7 @@ export default function Calendar() {
       ? Math.round(
           monthData.reduce(
             (total, [, data]) =>
-              total + data.productivity,
+              total + Number(data.productivity || 0),
             0
           ) / monthData.length
         )
@@ -275,16 +208,25 @@ export default function Calendar() {
   const totalProductiveMinutes =
     monthData.reduce(
       (total, [, data]) =>
-        total + data.productiveMinutes,
+        total + Number(data.productiveMinutes || 0),
       0
     );
 
   const totalCompletedTasks =
     monthData.reduce(
       (total, [, data]) =>
-        total + data.completed,
+        total + Number(data.completed || 0),
       0
     );
+
+  const currentEnergyLabel =
+    averageProductivity >= 80
+      ? "High"
+      : averageProductivity >= 55
+      ? "Good"
+      : monthData.length > 0
+      ? "Steady"
+      : "Ready";
 
   const goPreviousMonth = () => {
     setCurrentDate(
@@ -570,7 +512,7 @@ export default function Calendar() {
             <div>
               <span>Current Energy</span>
 
-              <strong>High</strong>
+              <strong>{currentEnergyLabel}</strong>
             </div>
 
           </div>
@@ -658,8 +600,8 @@ export default function Calendar() {
 
               {calendarDays.map((item) => {
 
-                const data = item.currentMonth
-                  ? SAMPLE_CALENDAR_DATA[
+                const rawData = item.currentMonth
+                  ? calendarData[
                       getDateKey(
                         year,
                         month,
@@ -667,6 +609,8 @@ export default function Calendar() {
                       )
                     ]
                   : null;
+
+                const data = hasDayActivity(rawData) ? rawData : null;
 
                 const dateKey = item.currentMonth
                   ? getDateKey(
@@ -1054,15 +998,7 @@ export default function Calendar() {
 
           <div className="weekly-bars">
 
-            {[
-              62,
-              78,
-              91,
-              72,
-              94,
-              58,
-              83,
-            ].map(
+            {weeklyScores.map(
               (value, index) => (
 
                 <div
@@ -1074,7 +1010,7 @@ export default function Calendar() {
 
                     <div
                       style={{
-                        height: `${value}%`,
+                        height: `${Math.max(14, value)}%`,
                       }}
                     >
                       <span>

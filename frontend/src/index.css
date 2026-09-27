@@ -5936,3 +5936,192 @@ article,
     transition: none;
   }
 }
+
+/* =========================================================
+   ENHANCED GLASSMORPHISM, CARD ANIMATIONS & MICRO-INTERACTIONS
+========================================================= */
+
+@keyframes timelensCardEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(14px) scale(0.992);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes timelensPageFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.timelens-page,
+.dashboard-page,
+.calendar-page,
+.insights-page {
+  animation: timelensPageFadeIn 0.48s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.timelens-glass-card {
+  --mouse-x: 50%;
+  --mouse-y: 0%;
+  backdrop-filter: blur(20px) saturate(145%);
+  -webkit-backdrop-filter: blur(20px) saturate(145%);
+  box-shadow:
+    0 18px 45px rgba(112, 57, 22, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.76),
+    inset 0 -1px 0 rgba(168, 92, 42, 0.08);
+  transition:
+    transform 0.34s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.34s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.34s cubic-bezier(0.22, 1, 0.36, 1),
+    background 0.34s ease;
+  animation: timelensCardEnter 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.timelens-glass-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: radial-gradient(
+    420px circle at var(--mouse-x, 50%) var(--mouse-y, 0%),
+    rgba(255, 244, 222, 0.32),
+    rgba(215, 121, 77, 0.06) 45%,
+    transparent 75%
+  );
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+
+.timelens-glass-card:hover {
+  transform: translateY(-4px) scale(1.004);
+  border-color: rgba(200, 107, 50, 0.34);
+  box-shadow:
+    0 26px 58px rgba(112, 57, 22, 0.16),
+    0 6px 18px rgba(184, 92, 39, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.88);
+}
+
+.timelens-glass-card:hover::after {
+  opacity: 1;
+}
+
+/* Staggered grid card cascade */
+.dashboard-side-grid > *:nth-child(1),
+.insight-metric-grid > *:nth-child(1),
+.calendar-stat-grid > *:nth-child(1),
+.coach-summary-grid > *:nth-child(1) {
+  animation-delay: 0.04s;
+}
+
+.dashboard-side-grid > *:nth-child(2),
+.insight-metric-grid > *:nth-child(2),
+.calendar-stat-grid > *:nth-child(2),
+.coach-summary-grid > *:nth-child(2) {
+  animation-delay: 0.09s;
+}
+
+.dashboard-side-grid > *:nth-child(3),
+.insight-metric-grid > *:nth-child(3),
+.calendar-stat-grid > *:nth-child(3),
+.coach-summary-grid > *:nth-child(3) {
+  animation-delay: 0.14s;
+}
+
+.dashboard-side-grid > *:nth-child(4),
+.insight-metric-grid > *:nth-child(4),
+.calendar-stat-grid > *:nth-child(4) {
+  animation-delay: 0.19s;
+}
+
+/* Calendar & Profile glass surface consistency */
+.calendar-stat-card,
+.calendar-card,
+.selected-day-panel,
+.weekly-strip {
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  box-shadow:
+    0 18px 45px rgba(112, 57, 22, 0.11),
+    inset 0 1px 0 rgba(255, 255, 255, 0.74);
+  transition:
+    transform 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.32s ease;
+  animation: timelensCardEnter 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.calendar-stat-card:hover,
+.selected-day-panel:hover,
+.weekly-strip:hover {
+  transform: translateY(-3px);
+  box-shadow:
+    0 24px 52px rgba(112, 57, 22, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.86);
+}
+
+/* Smooth animated progress bars & rings */
+.time-progress-productive,
+.time-progress-recreational,
+.balance-track > div,
+.history-bar > div,
+.weekly-bar > div,
+.ring-progress,
+.big-ring-progress {
+  transition:
+    width 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+    height 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+    stroke-dasharray 0.75s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Interactive inputs & focus states */
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: rgba(200, 107, 50, 0.52);
+  box-shadow:
+    0 0 0 3px rgba(200, 107, 50, 0.14),
+    inset 0 1px 2px rgba(255, 255, 255, 0.65);
+  transition:
+    border-color 0.22s ease,
+    box-shadow 0.22s ease;
+}
+
+/* Tactile button press micro-interaction */
+button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+/* Accessibility: honor prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  .timelens-page,
+  .dashboard-page,
+  .calendar-page,
+  .insights-page,
+  .timelens-glass-card,
+  .calendar-stat-card,
+  .calendar-card,
+  .selected-day-panel,
+  .weekly-strip {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .timelens-glass-card:hover,
+  .calendar-stat-card:hover,
+  .selected-day-panel:hover,
+  .weekly-strip:hover {
+    transform: none !important;
+  }
+}

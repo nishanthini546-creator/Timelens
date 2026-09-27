@@ -35,6 +35,7 @@ import {
 import GlassCard from "../../components/glasscard";
 
 import {
+  createDailyEntry,
   getDailyEntry,
   getLatestDailyEntry,
   getTasks,
@@ -244,24 +245,15 @@ export default function Dashboard() {
     try {
       setLoading(true);
 
-      const storedUser =
-        localStorage.getItem(
-          "timelens_user"
-        );
-
-      const token =
-        localStorage.getItem(
-          "timelens_token"
-        );
+      const storedUser = localStorage.getItem("timelens_user");
+      const token = localStorage.getItem("timelens_token");
 
       if (!storedUser || !token) {
         navigate("/auth");
         return;
       }
 
-      const parsedUser =
-        JSON.parse(storedUser);
-
+      const parsedUser = JSON.parse(storedUser);
       setUser(parsedUser);
 
       const today = getToday();
@@ -269,319 +261,139 @@ export default function Dashboard() {
       let entryResponse = null;
 
       try {
-        entryResponse =
-          await getDailyEntry(today);
+        entryResponse = await getDailyEntry(today);
       } catch {
         entryResponse = null;
       }
 
-      let entry =
-        entryResponse?.data ||
-        entryResponse ||
-        null;
-
-      if (!entry) {
+      if (!entryResponse) {
         try {
-          const latestResponse =
-            await getLatestDailyEntry();
-
-          entry =
-            latestResponse?.data ||
-            latestResponse ||
-            null;
+          entryResponse = await createDailyEntry({
+            entryDate: today,
+            dayType: "Workday",
+            mainGoal: "",
+            goalCategory: "Study",
+          });
         } catch {
-          entry = null;
+          try {
+            entryResponse = await getLatestDailyEntry();
+          } catch {
+            entryResponse = null;
+          }
         }
       }
 
-
-      /* -------------------------------------------------------
-         NO BACKEND DATA
-         Use sample data
-      ------------------------------------------------------- */
+      const entry =
+        entryResponse?.entry || entryResponse?.data || entryResponse || null;
 
       if (!entry) {
-        setUser(
-          parsedUser ||
-          SAMPLE_DASHBOARD_DATA.user
-        );
-
-        setGoal(
-          SAMPLE_DASHBOARD_DATA.goal
-        );
-
-        setEntryDate(
-          SAMPLE_DASHBOARD_DATA.entryDate
-        );
-
-        setTasks(
-          SAMPLE_DASHBOARD_DATA.tasks
-        );
-
-        setActivities(
-          SAMPLE_DASHBOARD_DATA.activities
-        );
-
-        setAnalytics(
-          SAMPLE_DASHBOARD_DATA.dailyAnalytics
-        );
-
-        setWeeklyAnalytics(
-          SAMPLE_DASHBOARD_DATA.weeklyAnalytics
-        );
-
+        setEntryDate(today);
+        setGoal("Set your daily goal in Plan & Track");
+        setTasks([]);
+        setActivities([]);
+        setAnalytics({
+          digitalMinutes: 0,
+          productiveMinutes: 0,
+          recreationalMinutes: 0,
+          completionRate: 0,
+          productivityScore: 0,
+          streak: 0,
+          streakDays: [],
+        });
+        setWeeklyAnalytics([]);
         setLoading(false);
-
         return;
       }
 
+      const entryId = entry.daily_entry_id || entry.id || entry._id;
+      const resolvedDate = entry.entry_date || entry.date || today;
 
-      /* -------------------------------------------------------
-         BACKEND ENTRY EXISTS
-      ------------------------------------------------------- */
-
-      const entryId =
-        entry.id ||
-        entry._id;
-
-      setEntryDate(
-        entry.date ||
-        today
-      );
-
+      setEntryDate(resolvedDate);
       setGoal(
-        entry.goal ||
-        SAMPLE_DASHBOARD_DATA.goal
+        entry.main_goal ||
+          entry.goal ||
+          "Set your daily goal in Plan & Track"
       );
 
-
-      if (!entryId) {
-        setTasks(
-          SAMPLE_DASHBOARD_DATA.tasks
-        );
-
-        setActivities(
-          SAMPLE_DASHBOARD_DATA.activities
-        );
-
-        setAnalytics(
-          SAMPLE_DASHBOARD_DATA.dailyAnalytics
-        );
-
-        setWeeklyAnalytics(
-          SAMPLE_DASHBOARD_DATA.weeklyAnalytics
-        );
-
-        setLoading(false);
-
-        return;
-      }
-
-
-      /* -------------------------------------------------------
-         LOAD REAL DATA
-      ------------------------------------------------------- */
-
-      let tasksResponse = null;
-      let activitiesResponse = null;
-      let analyticsResponse = null;
-      let weeklyResponse = null;
-
-
-      try {
-        tasksResponse =
-          await getTasks(entryId);
-      } catch {
-        tasksResponse = null;
-      }
-
-
-      try {
-        activitiesResponse =
-          await getActivities(entryId);
-      } catch {
-        activitiesResponse = null;
-      }
-
-
-      try {
-        analyticsResponse =
-          await getDailyAnalytics(
-            entryId
-          );
-      } catch {
-        analyticsResponse = null;
-      }
-
-
-      try {
-        weeklyResponse =
-          await getWeeklyAnalytics();
-      } catch {
-        weeklyResponse = null;
-      }
-
+      const [
+        tasksResponse,
+        activitiesResponse,
+        analyticsResponse,
+        weeklyResponse,
+      ] = await Promise.all([
+        entryId ? getTasks(entryId).catch(() => null) : Promise.resolve(null),
+        entryId
+          ? getActivities(entryId).catch(() => null)
+          : Promise.resolve(null),
+        getDailyAnalytics(resolvedDate).catch(() => null),
+        getWeeklyAnalytics(today).catch(() => null),
+      ]);
 
       const realTasks =
-        tasksResponse?.data ||
-        tasksResponse ||
-        [];
-
+        tasksResponse?.tasks || tasksResponse?.data || tasksResponse || [];
       const realActivities =
+        activitiesResponse?.activities ||
         activitiesResponse?.data ||
         activitiesResponse ||
         [];
-
       const realAnalytics =
+        analyticsResponse?.analytics ||
         analyticsResponse?.data ||
         analyticsResponse ||
         null;
-
       const realWeekly =
+        weeklyResponse?.days ||
+        weeklyResponse?.analytics?.days ||
         weeklyResponse?.data ||
-        weeklyResponse ||
-        null;
+        [];
 
-
-      /* -------------------------------------------------------
-         REAL DATA IF AVAILABLE
-         SAMPLE DATA ONLY AS FALLBACK
-      ------------------------------------------------------- */
-
-      setTasks(
-        Array.isArray(realTasks) &&
-        realTasks.length > 0
-          ? realTasks
-          : SAMPLE_DASHBOARD_DATA.tasks
-      );
-
-      setActivities(
-        Array.isArray(realActivities) &&
-        realActivities.length > 0
-          ? realActivities
-          : SAMPLE_DASHBOARD_DATA.activities
-      );
-
-      setAnalytics(
-        realAnalytics ||
-        SAMPLE_DASHBOARD_DATA.dailyAnalytics
-      );
-
-      setWeeklyAnalytics(
-        realWeekly ||
-        SAMPLE_DASHBOARD_DATA.weeklyAnalytics
-      );
-
+      setTasks(Array.isArray(realTasks) ? realTasks : []);
+      setActivities(Array.isArray(realActivities) ? realActivities : []);
+      setAnalytics(realAnalytics);
+      setWeeklyAnalytics(Array.isArray(realWeekly) ? realWeekly : []);
     } catch (error) {
-      console.error(
-        "Dashboard loading error:",
-        error
-      );
-
-
-      /* -------------------------------------------------------
-         COMPLETE SAMPLE FALLBACK
-      ------------------------------------------------------- */
-
-      setUser(
-        SAMPLE_DASHBOARD_DATA.user
-      );
-
-      setGoal(
-        SAMPLE_DASHBOARD_DATA.goal
-      );
-
-      setEntryDate(
-        SAMPLE_DASHBOARD_DATA.entryDate
-      );
-
-      setTasks(
-        SAMPLE_DASHBOARD_DATA.tasks
-      );
-
-      setActivities(
-        SAMPLE_DASHBOARD_DATA.activities
-      );
-
-      setAnalytics(
-        SAMPLE_DASHBOARD_DATA.dailyAnalytics
-      );
-
-      setWeeklyAnalytics(
-        SAMPLE_DASHBOARD_DATA.weeklyAnalytics
-      );
-
+      console.error("Dashboard loading error:", error);
     } finally {
       setLoading(false);
     }
   };
 
-
   useEffect(() => {
     loadDashboard();
   }, []);
-
 
   /* =========================================================
      LOGOUT
   ========================================================= */
 
   const handleLogout = () => {
-    localStorage.removeItem(
-      "timelens_token"
-    );
-
-    localStorage.removeItem(
-      "timelens_user"
-    );
-
+    localStorage.removeItem("timelens_token");
+    localStorage.removeItem("timelens_user");
     navigate("/auth");
   };
-
 
   /* =========================================================
      DISPLAY DATA
   ========================================================= */
 
-  const displayUser =
-    user ||
-    SAMPLE_DASHBOARD_DATA.user;
+  const displayUser = user || { name: "TimeLens User" };
 
-  const displayGoal =
-    goal ||
-    SAMPLE_DASHBOARD_DATA.goal;
+  const displayGoal = goal || "Set your daily goal in Plan & Track";
 
-  const displayDate =
-    entryDate ||
-    SAMPLE_DASHBOARD_DATA.entryDate;
+  const displayDate = entryDate || getToday();
 
+  const displayTasks = tasks;
 
-  const displayTasks =
-    tasks.length > 0
-      ? tasks
-      : SAMPLE_DASHBOARD_DATA.tasks;
-
-  const displayActivities =
-    activities.length > 0
-      ? activities
-      : SAMPLE_DASHBOARD_DATA.activities;
-
+  const displayActivities = activities;
 
   /* =========================================================
      HELPERS
   ========================================================= */
 
-  const formatMinutes = (
-    minutes = 0
-  ) => {
-    const total =
-      Number(minutes) || 0;
-
-    const hours =
-      Math.floor(total / 60);
-
-    const mins =
-      total % 60;
+  const formatMinutes = (minutes = 0) => {
+    const total = Number(minutes) || 0;
+    const hours = Math.floor(total / 60);
+    const mins = total % 60;
 
     if (hours === 0) {
       return `${mins}m`;
@@ -594,224 +406,162 @@ export default function Dashboard() {
     return `${hours}h ${mins}m`;
   };
 
-
   const firstName =
-    displayUser?.name
-      ?.split(" ")[0] ||
-    displayUser?.username
-      ?.split(" ")[0] ||
+    displayUser?.name?.split(" ")[0] ||
+    displayUser?.username?.split(" ")[0] ||
     "there";
-
 
   /* =========================================================
      TASK CALCULATIONS
   ========================================================= */
 
-  const completedTasks =
-    useMemo(() => {
-      return displayTasks.filter(
-        (task) =>
-          task.completed === true ||
-          task.status === "completed"
-      );
-    }, [displayTasks]);
+  const completedTasks = useMemo(() => {
+    return displayTasks.filter(
+      (task) => task.completed === true || task.status === "completed"
+    );
+  }, [displayTasks]);
 
+  const taskCompletion = useMemo(() => {
+    if (displayTasks.length === 0) {
+      return Number(analytics?.completionRate || 0);
+    }
 
-  const taskCompletion =
-    useMemo(() => {
-      if (
-        displayTasks.length === 0
-      ) {
-        return 0;
-      }
+    return Math.round((completedTasks.length / displayTasks.length) * 100);
+  }, [displayTasks, completedTasks, analytics]);
 
-      return Math.round(
-        (
-          completedTasks.length /
-          displayTasks.length
-        ) * 100
-      );
-    }, [
-      displayTasks,
-      completedTasks,
-    ]);
-
-
-  const plannedMinutes =
-    useMemo(() => {
-      return displayTasks.reduce(
-        (total, task) =>
-          total +
-          Number(
+  const plannedMinutes = useMemo(() => {
+    const fromTasks = displayTasks.reduce(
+      (total, task) =>
+        total +
+        Number(
+          task.planned_minutes ||
             task.minutes ||
             task.duration_minutes ||
             task.duration ||
             0
-          ),
-        0
-      );
-    }, [displayTasks]);
-
+        ),
+      0
+    );
+    return fromTasks > 0 ? fromTasks : Number(analytics?.plannedMinutes || 0);
+  }, [displayTasks, analytics]);
 
   /* =========================================================
      ACTIVITY CALCULATIONS
   ========================================================= */
 
-  const digitalMinutes =
-    useMemo(() => {
-      const value =
-        displayActivities.reduce(
-          (total, activity) =>
-            total +
-            Number(
-              activity.duration_minutes ||
-              activity.duration ||
-              0
-            ),
-          0
-        );
-
-      return value > 0
-        ? value
-        : Number(
-            analytics?.digital_minutes ||
-            SAMPLE_DASHBOARD_DATA
-              .dailyAnalytics
-              .digital_minutes
-          );
-    }, [
-      displayActivities,
-      analytics,
-    ]);
-
-
-  const productiveMinutes =
-    useMemo(() => {
-      return displayActivities
-        .filter(
-          (activity) =>
-            activity.type ===
-            "productive"
-        )
-        .reduce(
-          (total, activity) =>
-            total +
-            Number(
-              activity.duration_minutes ||
-              activity.duration ||
-              0
-            ),
-          0
-        );
-    }, [displayActivities]);
-
-
-  const recreationalMinutes =
-    useMemo(() => {
-      return displayActivities
-        .filter(
-          (activity) =>
-            activity.type ===
-            "recreational"
-        )
-        .reduce(
-          (total, activity) =>
-            total +
-            Number(
-              activity.duration_minutes ||
-              activity.duration ||
-              0
-            ),
-          0
-        );
-    }, [displayActivities]);
-
-
-  const productivePercentage =
-    useMemo(() => {
-      if (digitalMinutes === 0) {
-        return 0;
-      }
-
-      return Math.round(
-        (
-          productiveMinutes /
-          digitalMinutes
-        ) * 100
+  const productiveMinutes = useMemo(() => {
+    const fromActivities = displayActivities
+      .filter(
+        (activity) =>
+          (activity.type || activity.activity_type) === "productive"
+      )
+      .reduce(
+        (total, activity) =>
+          total +
+          Number(activity.duration_minutes || activity.duration || 0),
+        0
       );
-    }, [
-      productiveMinutes,
-      digitalMinutes,
-    ]);
 
+    if (fromActivities > 0) return fromActivities;
+    if (analytics?.productiveMinutes !== undefined) {
+      return Number(analytics.productiveMinutes);
+    }
+    return completedTasks.reduce(
+      (total, t) =>
+        total + Number(t.actual_minutes || t.planned_minutes || t.minutes || 0),
+      0
+    );
+  }, [displayActivities, analytics, completedTasks]);
 
-  const recreationalPercentage =
-    useMemo(() => {
-      if (digitalMinutes === 0) {
-        return 0;
-      }
-
-      return Math.round(
-        (
-          recreationalMinutes /
-          digitalMinutes
-        ) * 100
+  const recreationalMinutes = useMemo(() => {
+    const fromActivities = displayActivities
+      .filter((activity) => {
+        const t = activity.type || activity.activity_type;
+        return t === "recreational" || t === "recreation";
+      })
+      .reduce(
+        (total, activity) =>
+          total +
+          Number(activity.duration_minutes || activity.duration || 0),
+        0
       );
-    }, [
-      recreationalMinutes,
-      digitalMinutes,
-    ]);
 
+    return fromActivities > 0
+      ? fromActivities
+      : Number(analytics?.recreationalMinutes || 0);
+  }, [displayActivities, analytics]);
+
+  const digitalMinutes = useMemo(() => {
+    const fromActivities = displayActivities.reduce(
+      (total, activity) =>
+        total + Number(activity.duration_minutes || activity.duration || 0),
+      0
+    );
+
+    if (fromActivities > 0) return fromActivities;
+    if (analytics?.digitalMinutes !== undefined) {
+      return Number(analytics.digitalMinutes);
+    }
+    return productiveMinutes + recreationalMinutes;
+  }, [displayActivities, analytics, productiveMinutes, recreationalMinutes]);
+
+  const productivePercentage = useMemo(() => {
+    if (digitalMinutes === 0) {
+      return taskCompletion;
+    }
+
+    return Math.round((productiveMinutes / digitalMinutes) * 100);
+  }, [productiveMinutes, digitalMinutes, taskCompletion]);
+
+  const recreationalPercentage = useMemo(() => {
+    if (digitalMinutes === 0) {
+      return 0;
+    }
+
+    return Math.round((recreationalMinutes / digitalMinutes) * 100);
+  }, [recreationalMinutes, digitalMinutes]);
 
   /* =========================================================
      PRODUCTIVITY SCORE
   ========================================================= */
 
-  const productivityScore =
-    useMemo(() => {
-      const taskScore =
-        taskCompletion * 0.45;
+  const productivityScore = useMemo(() => {
+    if (analytics?.productivityScore !== undefined) {
+      return Number(analytics.productivityScore);
+    }
 
-      const productiveScore =
-        productivePercentage * 0.4;
+    const taskScore = taskCompletion * 0.45;
+    const productiveScore = productivePercentage * 0.4;
+    const activityScore =
+      displayActivities.length > 0 || completedTasks.length > 0 ? 15 : 0;
 
-      const activityScore =
-        displayActivities.length > 0
-          ? 15
-          : 0;
+    return Math.min(
+      100,
+      Math.round(taskScore + productiveScore + activityScore)
+    );
+  }, [
+    analytics,
+    taskCompletion,
+    productivePercentage,
+    displayActivities,
+    completedTasks,
+  ]);
 
-      return Math.min(
-        100,
-        Math.round(
-          taskScore +
-          productiveScore +
-          activityScore
-        )
-      );
-    }, [
-      taskCompletion,
-      productivePercentage,
-      displayActivities,
-    ]);
+  const productivityLabel = useMemo(() => {
+    if (productivityScore >= 85) {
+      return "Excellent";
+    }
 
+    if (productivityScore >= 70) {
+      return "Strong";
+    }
 
-  const productivityLabel =
-    useMemo(() => {
-      if (productivityScore >= 85) {
-        return "Excellent";
-      }
+    if (productivityScore >= 50) {
+      return "Good";
+    }
 
-      if (productivityScore >= 70) {
-        return "Strong";
-      }
-
-      if (productivityScore >= 50) {
-        return "Good";
-      }
-
-      return "Getting Started";
-    }, [productivityScore]);
-
+    return "Getting Started";
+  }, [productivityScore]);
 
   /* =========================================================
      SCORE BREAKDOWN
@@ -831,196 +581,153 @@ export default function Dashboard() {
     {
       label: "Activity Tracking",
       value:
-        displayActivities.length > 0
-          ? 100
-          : 0,
+        displayActivities.length > 0 || completedTasks.length > 0 ? 100 : 0,
       icon: Activity,
     },
   ];
-
 
   /* =========================================================
      STREAK
   ========================================================= */
 
-  const currentStreak =
-    SAMPLE_DASHBOARD_DATA.streak;
+  const currentStreak = Number(analytics?.streak ?? 0);
 
-
-  const streakDays = [
-    {
-      day: "Mon",
-      active: true,
-    },
-    {
-      day: "Tue",
-      active: true,
-    },
-    {
-      day: "Wed",
-      active: true,
-    },
-    {
-      day: "Thu",
-      active: true,
-    },
-    {
-      day: "Fri",
-      active: true,
-    },
-    {
-      day: "Sat",
-      active: false,
-    },
-    {
-      day: "Sun",
-      active: false,
-    },
-  ];
-
+  const streakDays = useMemo(() => {
+    if (
+      Array.isArray(analytics?.streakDays) &&
+      analytics.streakDays.length === 7
+    ) {
+      return analytics.streakDays;
+    }
+    return [
+      { day: "Mon", active: false },
+      { day: "Tue", active: false },
+      { day: "Wed", active: false },
+      { day: "Thu", active: false },
+      { day: "Fri", active: false },
+      { day: "Sat", active: false },
+      { day: "Sun", active: false },
+    ];
+  }, [analytics]);
 
   /* =========================================================
      ACHIEVEMENTS
   ========================================================= */
 
+  const hasCustomGoal = Boolean(
+    goal && goal !== "Set your daily goal in Plan & Track"
+  );
+
   const achievements = [
     {
       id: 1,
       title: "First Step",
-      description:
-        "Complete your first task",
+      description: "Complete your first task",
       icon: CheckCircle2,
-      unlocked:
-        completedTasks.length >= 1,
+      unlocked: completedTasks.length >= 1,
     },
-
     {
       id: 2,
       title: "Goal Setter",
-      description:
-        "Set a daily productivity goal",
+      description: "Set a daily productivity goal",
       icon: Target,
-      unlocked:
-        Boolean(displayGoal),
+      unlocked: hasCustomGoal,
     },
-
     {
       id: 3,
       title: "5 Day Streak",
-      description:
-        "Stay productive for 5 days",
+      description: "Stay productive for 5 days",
       icon: Flame,
-      unlocked:
-        currentStreak >= 5,
+      unlocked: currentStreak >= 5,
     },
-
     {
       id: 4,
       title: "Time in Action",
-      description:
-        "Track your first activity",
+      description: "Track your first activity",
       icon: Timer,
-      unlocked:
-        displayActivities.length >= 1,
+      unlocked: displayActivities.length >= 1,
     },
-
     {
       id: 5,
       title: "Task Master",
-      description:
-        "Complete 5 tasks",
+      description: "Complete 5 tasks",
       icon: Trophy,
-      unlocked:
-        completedTasks.length >= 5,
+      unlocked: completedTasks.length >= 5,
     },
-
     {
       id: 6,
       title: "Productivity Pro",
-      description:
-        "Reach a score of 85",
+      description: "Reach a score of 85",
       icon: Award,
-      unlocked:
-        productivityScore >= 85,
+      unlocked: productivityScore >= 85,
     },
   ];
 
-
-  const unlockedAchievements =
-    achievements.filter(
-      (item) => item.unlocked
-    ).length;
-
+  const unlockedAchievements = achievements.filter(
+    (item) => item.unlocked
+  ).length;
 
   /* =========================================================
      WEEKLY CHART
   ========================================================= */
 
-  const weeklyChartData =
-    useMemo(() => {
-      if (
-        Array.isArray(
-          weeklyAnalytics
-        ) &&
-        weeklyAnalytics.length > 0
-      ) {
-        return weeklyAnalytics.map(
-          (item) => ({
-            day:
-              item.day ||
-              item.date ||
-              "",
+  const weeklyChartData = useMemo(() => {
+    if (Array.isArray(weeklyAnalytics) && weeklyAnalytics.length > 0) {
+      return weeklyAnalytics.map((item) => ({
+        day: item.day || item.date || "",
+        productive: Number(
+          item.productive ?? item.productiveMinutes ?? item.productive_minutes ?? 0
+        ),
+        recreational: Number(
+          item.recreational ??
+            item.recreationalMinutes ??
+            item.recreational_minutes ??
+            0
+        ),
+        digital: Number(
+          item.digital ?? item.digitalMinutes ?? item.digital_minutes ?? 0
+        ),
+      }));
+    }
 
-            productive:
-              Number(
-                item.productive ||
-                item.productive_minutes ||
-                0
-              ),
-
-            recreational:
-              Number(
-                item.recreational ||
-                item.recreational_minutes ||
-                0
-              ),
-
-            digital:
-              Number(
-                item.digital ||
-                item.digital_minutes ||
-                0
-              ),
-          })
-        );
-      }
-
-      return SAMPLE_DASHBOARD_DATA
-        .weeklyAnalytics;
-    }, [weeklyAnalytics]);
-
+    return [
+      { day: "Mon", productive: 0, recreational: 0, digital: 0 },
+      { day: "Tue", productive: 0, recreational: 0, digital: 0 },
+      { day: "Wed", productive: 0, recreational: 0, digital: 0 },
+      { day: "Thu", productive: 0, recreational: 0, digital: 0 },
+      { day: "Fri", productive: 0, recreational: 0, digital: 0 },
+      { day: "Sat", productive: 0, recreational: 0, digital: 0 },
+      { day: "Sun", productive: 0, recreational: 0, digital: 0 },
+    ];
+  }, [weeklyAnalytics]);
 
   /* =========================================================
      ACTIVITY CHART
   ========================================================= */
 
-  const activityChartData =
-    useMemo(() => {
-      return displayActivities.map(
-        (activity) => ({
-          name:
-            activity.name ||
-            "Activity",
+  const activityChartData = useMemo(() => {
+    if (displayActivities.length > 0) {
+      return displayActivities.map((activity) => ({
+        name: activity.name || activity.activity_name || "Activity",
+        duration: Number(
+          activity.duration_minutes || activity.duration || 1
+        ),
+      }));
+    }
 
-          duration:
-            Number(
-              activity.duration_minutes ||
-              activity.duration ||
-              0
-            ),
-        })
-      );
-    }, [displayActivities]);
+    if (displayTasks.length > 0) {
+      return displayTasks.map((task) => ({
+        name: task.name || task.task_name || "Task",
+        duration: Number(
+          task.completed
+            ? task.actual_minutes || task.planned_minutes || task.minutes || 0
+            : task.planned_minutes || task.minutes || 0
+        ),
+      }));
+    }
+
+    return [{ name: "No activity yet", duration: 0 }];
+  }, [displayActivities, displayTasks]);
 
 
   /* =========================================================

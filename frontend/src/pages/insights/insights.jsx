@@ -35,21 +35,6 @@ function getToday() {
 }
 
 /* ==================================================
-   SAMPLE TIME COACH DATA
-   Frontend only - no backend required
-================================================== */
-
-const sampleCoachData = {
-  digitalTime: 380,
-  productiveTime: 225,
-  recreationalTime: 155,
-  completedTasks: 4,
-  totalTasks: 5,
-  plannedTime: 300,
-  actualTime: 345,
-};
-
-/* ==================================================
    INSIGHTS
 ================================================== */
 
@@ -415,6 +400,8 @@ function Insights() {
 
           {tab === "Time Coach" && (
             <TimeCoachView
+              today={today}
+              week={week}
               formatMinutes={formatMinutes}
             />
           )}
@@ -629,6 +616,10 @@ function WeekView({
 }) {
 
   const days = week?.days || [];
+  const digitalTotal = week?.totals?.digitalMinutes ?? week?.digitalMinutes ?? 0;
+  const productiveTotal = week?.totals?.productiveMinutes ?? week?.productiveMinutes ?? 0;
+  const recreationalTotal = week?.totals?.recreationalMinutes ?? week?.recreationalMinutes ?? 0;
+  const completionRateTotal = week?.totals?.completionRate ?? week?.completionRate ?? 0;
 
   return (
     <div className="insight-content">
@@ -663,14 +654,14 @@ function WeekView({
               <WeekMetric
                 title="Digital time"
                 value={formatMinutes(
-                  week.digitalMinutes
+                  digitalTotal
                 )}
               />
 
               <WeekMetric
                 title="Productive"
                 value={formatMinutes(
-                  week.productiveMinutes
+                  productiveTotal
                 )}
                 accent="orange"
               />
@@ -678,14 +669,14 @@ function WeekView({
               <WeekMetric
                 title="Recreational"
                 value={formatMinutes(
-                  week.recreationalMinutes
+                  recreationalTotal
                 )}
                 accent="gold"
               />
 
               <WeekMetric
                 title="Task completion"
-                value={`${week.completionRate || 0}%`}
+                value={`${completionRateTotal}%`}
                 accent="brown"
               />
 
@@ -775,17 +766,43 @@ function WeekView({
 ================================================== */
 
 function TimeCoachView({
+  today,
+  week,
   formatMinutes,
 }) {
 
-  const data = sampleCoachData;
+  const hasTodayData =
+    today &&
+    (Number(today.digitalMinutes || 0) > 0 ||
+      Number(today.totalTasks || 0) > 0 ||
+      Number(today.plannedMinutes || 0) > 0);
+
+  const source = hasTodayData ? today : (week?.totals || week || {});
+
+  const data = {
+    digitalTime: Number(source?.digitalMinutes || 0),
+    productiveTime: Number(source?.productiveMinutes || 0),
+    recreationalTime: Number(source?.recreationalMinutes || 0),
+    completedTasks: Number(source?.completedTasks || 0),
+    totalTasks: Number(source?.totalTasks || 0),
+    plannedTime: Number(source?.plannedMinutes || 0),
+    actualTime: Number(source?.actualMinutes || 0),
+  };
 
   const productivity =
-    Math.round(
-      (data.productiveTime /
-        data.digitalTime) *
-        100
-    );
+    data.digitalTime > 0
+      ? Math.round(
+          (data.productiveTime /
+            data.digitalTime) *
+            100
+        )
+      : data.totalTasks > 0
+      ? Math.round(
+          (data.completedTasks /
+            data.totalTasks) *
+            100
+        )
+      : 0;
 
   const extraTime =
     data.actualTime -
@@ -795,6 +812,11 @@ function TimeCoachView({
     Math.round(
       data.recreationalTime * 0.25
     );
+
+  const hasAnyRecordedActivity =
+    data.digitalTime > 0 ||
+    data.totalTasks > 0 ||
+    data.plannedTime > 0;
 
   return (
     <div className="insight-content">
@@ -919,14 +941,22 @@ function TimeCoachView({
               <div>
 
                 <strong>
-                  Strong task progress
+                  {data.totalTasks > 0
+                    ? "Task progress check"
+                    : "Start with 1 priority task"}
                 </strong>
 
                 <p>
-                  You completed{" "}
-                  {data.completedTasks} of{" "}
-                  {data.totalTasks} planned
-                  tasks today.
+                  {data.totalTasks > 0 ? (
+                    <>
+                      You completed{" "}
+                      {data.completedTasks} of{" "}
+                      {data.totalTasks} planned
+                      tasks {hasTodayData ? "today" : "recently"}.
+                    </>
+                  ) : (
+                    "Add your tasks in Plan & Track to measure daily completion."
+                  )}
                 </p>
 
               </div>
@@ -972,16 +1002,22 @@ function TimeCoachView({
                 </strong>
 
                 <p>
-                  Redirecting just 25% of
-                  recreational time could give
-                  you{" "}
-                  <strong>
-                    {formatMinutes(
-                      redirectedTime
-                    )}
-                  </strong>{" "}
-                  of additional goal-focused
-                  time.
+                  {redirectedTime > 0 ? (
+                    <>
+                      Redirecting just 25% of
+                      recreational time could give
+                      you{" "}
+                      <strong>
+                        {formatMinutes(
+                          redirectedTime
+                        )}
+                      </strong>{" "}
+                      of additional goal-focused
+                      time.
+                    </>
+                  ) : (
+                    "Launch a 60-minute Focus Session in Plan & Track to build deep work momentum."
+                  )}
                 </p>
 
               </div>
@@ -1054,7 +1090,9 @@ function TimeCoachView({
               <span>DIFFERENCE</span>
 
               <strong>
-                +{formatMinutes(extraTime)}
+                {extraTime >= 0
+                  ? `+${formatMinutes(extraTime)}`
+                  : `-${formatMinutes(Math.abs(extraTime))}`}
               </strong>
 
             </div>
@@ -1106,15 +1144,16 @@ function TimeCoachView({
       </GlassCard>
 
 
-      {/* SAMPLE DATA NOTE */}
+      {/* LIVE DATA NOTE */}
 
       <div className="coach-demo-note">
 
         <Sparkles size={16} />
 
         <span>
-          Time Coach is currently running on
-          sample data for demonstration.
+          {hasAnyRecordedActivity
+            ? "Time Coach is analyzing your live recorded activity and task completion."
+            : "No activity recorded yet today — log tasks or activities in Plan & Track to personalize Time Coach."}
         </span>
 
       </div>

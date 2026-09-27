@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import {
@@ -10,18 +11,155 @@ import {
   Clock3,
   Sparkles,
   ChevronRight,
+  Target,
+  Bell,
+  CheckCircle2,
+  Edit3,
+  Check,
 } from "lucide-react";
 
 import GlassCard from "../../components/glasscard";
+import {
+  getCurrentUser,
+  updateUserProfile,
+  getGoals,
+  createGoal,
+  updateGoalStatus,
+  getNotifications,
+  markNotificationRead,
+} from "../../services/api";
 
 function Profile() {
   const navigate = useNavigate();
 
-  const savedUser = localStorage.getItem("timelens_user");
+  const [user, setUser] = useState(() => {
+    const savedUser = localStorage.getItem("timelens_user");
+    try {
+      return savedUser ? JSON.parse(savedUser) : null;
+    } catch {
+      return null;
+    }
+  });
 
-  const user = savedUser
-    ? JSON.parse(savedUser)
-    : null;
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState(user?.name || "");
+  const [savingProfile, setSavingProfile] = useState(false);
+
+  const [goals, setGoals] = useState([]);
+  const [newGoalTitle, setNewGoalTitle] = useState("");
+  const [notifications, setNotifications] = useState([]);
+
+  useEffect(() => {
+    const token = localStorage.getItem("timelens_token");
+    if (!user || !token) {
+      navigate("/auth");
+      return;
+    }
+
+    let isMounted = true;
+
+    async function loadProfileData() {
+      try {
+        const [meRes, goalsRes, notifRes] = await Promise.all([
+          getCurrentUser().catch(() => null),
+          getGoals().catch(() => null),
+          getNotifications().catch(() => null),
+        ]);
+
+        if (!isMounted) return;
+
+        if (meRes?.user) {
+          setUser(meRes.user);
+          setNameInput(meRes.user.name || "");
+          localStorage.setItem("timelens_user", JSON.stringify(meRes.user));
+        }
+
+        if (Array.isArray(goalsRes?.goals)) {
+          setGoals(goalsRes.goals);
+        }
+
+        if (Array.isArray(notifRes?.notifications)) {
+          setNotifications(notifRes.notifications);
+        }
+      } catch (err) {
+        console.error("Profile load error:", err);
+      }
+    }
+
+    loadProfileData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [navigate]);
+
+  const handleSaveProfile = async () => {
+    if (!nameInput.trim()) return;
+    try {
+      setSavingProfile(true);
+      const res = await updateUserProfile({
+        name: nameInput.trim(),
+        email: user?.email,
+      });
+      if (res?.user) {
+        setUser(res.user);
+        localStorage.setItem("timelens_user", JSON.stringify(res.user));
+      }
+      setEditingName(false);
+    } catch (err) {
+      console.error("Failed to update profile:", err);
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const handleAddGoal = async (e) => {
+    e.preventDefault();
+    if (!newGoalTitle.trim()) return;
+    try {
+      const res = await createGoal({
+        title: newGoalTitle.trim(),
+        category: "Personal Focus",
+      });
+      if (res?.goal) {
+        setGoals((prev) => [res.goal, ...prev]);
+      }
+      setNewGoalTitle("");
+    } catch (err) {
+      console.error("Failed to create goal:", err);
+    }
+  };
+
+  const handleToggleGoal = async (goal) => {
+    const nextStatus = goal.status === "completed" ? "active" : "completed";
+    try {
+      const res = await updateGoalStatus(goal.goal_id || goal.id, nextStatus);
+      if (res?.goal) {
+        setGoals((prev) =>
+          prev.map((g) =>
+            (g.goal_id || g.id) === (goal.goal_id || goal.id) ? res.goal : g
+          )
+        );
+      }
+    } catch (err) {
+      console.error("Failed to update goal:", err);
+    }
+  };
+
+  const handleMarkRead = async (notification) => {
+    if (notification.is_read) return;
+    try {
+      const id = notification.notification_id || notification.id;
+      await markNotificationRead(id);
+      setNotifications((prev) =>
+        prev.map((n) =>
+          (n.notification_id || n.id) === id ? { ...n, is_read: true } : n
+        )
+      );
+    } catch (err) {
+      console.error("Failed to mark notification read:", err);
+    }
+  };
 
   const logout = () => {
     localStorage.removeItem("timelens_token");
@@ -31,7 +169,6 @@ function Profile() {
   };
 
   if (!user) {
-    navigate("/auth");
     return null;
   }
 
@@ -268,37 +405,117 @@ function Profile() {
 
               <div className="profile-card-content">
 
-                <div className="profile-card-heading">
+                <div
+                  className="profile-card-heading"
+                  style={{ justifyContent: "space-between" }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                    <div className="profile-icon-box">
+                      <User size={19} />
+                    </div>
 
-                  <div className="profile-icon-box">
-                    <User size={19} />
+                    <div>
+                      <span className="profile-small-label">
+                        PERSONAL INFORMATION
+                      </span>
+
+                      <h3>
+                        Account details
+                      </h3>
+                    </div>
                   </div>
 
-                  <div>
-
-                    <span className="profile-small-label">
-                      PERSONAL INFORMATION
-                    </span>
-
-                    <h3>
-                      Account details
-                    </h3>
-
-                  </div>
+                  {!editingName ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNameInput(user.name || "");
+                        setEditingName(true);
+                      }}
+                      style={{
+                        border: "1px solid rgba(139, 86, 46, 0.22)",
+                        background: "rgba(255, 250, 242, 0.75)",
+                        color: "#734222",
+                        borderRadius: "10px",
+                        padding: "6px 10px",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "5px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <Edit3 size={13} />
+                      Edit
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleSaveProfile}
+                      disabled={savingProfile}
+                      style={{
+                        border: "none",
+                        background: "linear-gradient(135deg, #d7794d, #a94e38)",
+                        color: "#fff",
+                        borderRadius: "10px",
+                        padding: "6px 12px",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "5px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <Check size={13} />
+                      {savingProfile ? "Saving..." : "Save"}
+                    </button>
+                  )}
 
                 </div>
 
 
                 <div className="profile-details">
 
-                  <ProfileRow
-                    icon={<User size={18} />}
-                    label="Full name"
-                    value={
-                      user.name ||
-                      "Not available"
-                    }
-                  />
+                  {editingName ? (
+                    <div
+                      style={{
+                        padding: "12px 0",
+                        borderBottom: "1px solid rgba(124, 79, 43, 0.12)",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "6px",
+                      }}
+                    >
+                      <span style={{ fontSize: "12px", color: "#7c5b43" }}>
+                        Full name
+                      </span>
+                      <input
+                        type="text"
+                        value={nameInput}
+                        onChange={(e) => setNameInput(e.target.value)}
+                        style={{
+                          padding: "9px 12px",
+                          borderRadius: "10px",
+                          border: "1px solid rgba(139, 86, 46, 0.28)",
+                          background: "rgba(255, 255, 255, 0.85)",
+                          color: "#3d2516",
+                          fontSize: "14px",
+                          fontWeight: 600,
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <ProfileRow
+                      icon={<User size={18} />}
+                      label="Full name"
+                      value={
+                        user.name ||
+                        "Not available"
+                      }
+                    />
+                  )}
 
 
                   <ProfileRow
@@ -395,6 +612,186 @@ function Profile() {
 
             </GlassCard>
 
+          </div>
+
+
+          {/* =====================================================
+              GOALS & NOTIFICATIONS (POSTGRESQL PERSISTENT)
+          ===================================================== */}
+
+          <div
+            className="profile-grid"
+            style={{
+              marginTop: "18px",
+            }}
+          >
+            {/* Active Goals */}
+            <GlassCard>
+              <div className="profile-card-content">
+                <div className="profile-card-heading">
+                  <div className="profile-icon-box">
+                    <Target size={19} />
+                  </div>
+                  <div>
+                    <span className="profile-small-label">
+                      PERSONAL GOALS
+                    </span>
+                    <h3>Saved focus goals</h3>
+                  </div>
+                </div>
+
+                <form
+                  onSubmit={handleAddGoal}
+                  style={{
+                    display: "flex",
+                    gap: "8px",
+                    marginTop: "14px",
+                    marginBottom: "12px",
+                  }}
+                >
+                  <input
+                    type="text"
+                    placeholder="Add a personal milestone..."
+                    value={newGoalTitle}
+                    onChange={(e) => setNewGoalTitle(e.target.value)}
+                    style={{
+                      flex: 1,
+                      padding: "9px 12px",
+                      borderRadius: "11px",
+                      border: "1px solid rgba(139, 86, 46, 0.22)",
+                      background: "rgba(255, 252, 246, 0.78)",
+                      color: "#3d2516",
+                      fontSize: "13px",
+                    }}
+                  />
+                  <button
+                    type="submit"
+                    style={{
+                      border: "none",
+                      borderRadius: "11px",
+                      padding: "9px 14px",
+                      background: "linear-gradient(135deg, #d7794d, #a94e38)",
+                      color: "#fff",
+                      fontWeight: 600,
+                      fontSize: "12.5px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Add
+                  </button>
+                </form>
+
+                <div className="profile-feature-list">
+                  {goals.length === 0 ? (
+                    <div
+                      style={{
+                        padding: "14px",
+                        borderRadius: "14px",
+                        background: "rgba(255, 249, 238, 0.55)",
+                        color: "#785a46",
+                        fontSize: "13px",
+                      }}
+                    >
+                      Goals you set in Plan & Track or here are automatically saved to your account.
+                    </div>
+                  ) : (
+                    goals.slice(0, 4).map((g) => {
+                      const isDone = g.status === "completed";
+                      return (
+                        <button
+                          key={g.goal_id || g.id}
+                          type="button"
+                          onClick={() => handleToggleGoal(g)}
+                          className="profile-feature-item"
+                          style={{
+                            opacity: isDone ? 0.72 : 1,
+                          }}
+                        >
+                          <div className="profile-feature-left">
+                            <div className="profile-feature-icon">
+                              <CheckCircle2
+                                size={17}
+                                style={{
+                                  color: isDone ? "#2e7d32" : "#b86236",
+                                }}
+                              />
+                            </div>
+                            <div>
+                              <strong
+                                style={{
+                                  textDecoration: isDone ? "line-through" : "none",
+                                }}
+                              >
+                                {g.title}
+                              </strong>
+                              <p>{g.category || "Personal Goal"} • {isDone ? "Completed" : "Active"}</p>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </GlassCard>
+
+            {/* Activity Notifications */}
+            <GlassCard>
+              <div className="profile-card-content">
+                <div className="profile-card-heading">
+                  <div className="profile-icon-box">
+                    <Bell size={19} />
+                  </div>
+                  <div>
+                    <span className="profile-small-label">
+                      ACTIVITY LOG
+                    </span>
+                    <h3>Recent notifications</h3>
+                  </div>
+                </div>
+
+                <div
+                  className="profile-feature-list"
+                  style={{ marginTop: "14px" }}
+                >
+                  {notifications.length === 0 ? (
+                    <div
+                      style={{
+                        padding: "14px",
+                        borderRadius: "14px",
+                        background: "rgba(255, 249, 238, 0.55)",
+                        color: "#785a46",
+                        fontSize: "13px",
+                      }}
+                    >
+                      Task completions and milestones will appear here automatically.
+                    </div>
+                  ) : (
+                    notifications.slice(0, 4).map((n) => (
+                      <button
+                        key={n.notification_id || n.id}
+                        type="button"
+                        onClick={() => handleMarkRead(n)}
+                        className="profile-feature-item"
+                        style={{
+                          opacity: n.is_read ? 0.72 : 1,
+                        }}
+                      >
+                        <div className="profile-feature-left">
+                          <div className="profile-feature-icon">
+                            <Sparkles size={16} />
+                          </div>
+                          <div>
+                            <strong>{n.title}</strong>
+                            <p>{n.message}</p>
+                          </div>
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            </GlassCard>
           </div>
 
 

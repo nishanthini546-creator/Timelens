@@ -4,38 +4,23 @@ const {
   start,
   getAll,
   stop,
+  remove,
 } = require("../controllers/activityController");
 
 const authenticateToken = require("../middleware/authMiddleware");
 
 const router = express.Router();
 
-
 /* ---------- Start Activity ---------- */
-
-router.post(
-  "/start",
-  authenticateToken,
-  start
-);
-
+router.post("/start", authenticateToken, start);
 
 /* ---------- Get Activities ---------- */
-
-router.get(
-  "/:dailyEntryId",
-  authenticateToken,
-  getAll
-);
-
+router.get("/:dailyEntryId", authenticateToken, getAll);
 
 /* ---------- Stop Activity ---------- */
+router.post("/:activityId/stop", authenticateToken, stop);
 
-router.post(
-  "/:activityId/stop",
-  authenticateToken,
-  stop
-);
-
+/* ---------- Delete Activity ---------- */
+router.delete("/:activityId", authenticateToken, remove);
 
 module.exports = router;

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { registerUser, loginUser } from "../../services/api";
 
 function Auth() {
   const navigate = useNavigate();
@@ -42,32 +43,23 @@ function Auth() {
     try {
       setLoading(true);
 
-      const response = await fetch(
-        "http://localhost:5000/api/auth/register",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            name,
-            email,
-            password,
-          }),
-        }
-      );
+      const data = await registerUser({
+        name,
+        email,
+        password,
+      });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        setError(data.message || "Registration failed.");
+      if (data.token && data.user) {
+        localStorage.setItem("timelens_token", data.token);
+        localStorage.setItem("timelens_user", JSON.stringify(data.user));
+        setMessage("Account created successfully. Entering TimeLens...");
+        setTimeout(() => {
+          navigate("/dashboard");
+        }, 600);
         return;
       }
 
-      setMessage(
-        "Account created successfully. Please log in."
-      );
-
+      setMessage("Account created successfully. Please log in.");
       setName("");
       setEmail("");
       setPassword("");
@@ -76,11 +68,10 @@ function Auth() {
       setTimeout(() => {
         setIsRegister(false);
       }, 800);
-    } catch (error) {
-      console.error("Registration error:", error);
-
+    } catch (err) {
+      console.error("Registration error:", err);
       setError(
-        "Unable to connect to the TimeLens server."
+        err.message || "Unable to connect to the TimeLens server."
       );
     } finally {
       setLoading(false);
@@ -100,38 +91,16 @@ function Auth() {
     try {
       setLoading(true);
 
-      const response = await fetch(
-        "http://localhost:5000/api/auth/login",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            email,
-            password,
-          }),
-        }
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        setError(data.message || "Login failed.");
-        return;
-      }
+      const data = await loginUser({
+        email,
+        password,
+      });
 
       /* Store JWT */
-      localStorage.setItem(
-        "timelens_token",
-        data.token
-      );
+      localStorage.setItem("timelens_token", data.token);
 
       /* Store logged-in user */
-      localStorage.setItem(
-        "timelens_user",
-        JSON.stringify(data.user)
-      );
+      localStorage.setItem("timelens_user", JSON.stringify(data.user));
 
       setMessage("Login successful.");
 
@@ -139,11 +108,10 @@ function Auth() {
       setTimeout(() => {
         navigate("/dashboard");
       }, 400);
-    } catch (error) {
-      console.error("Login error:", error);
-
+    } catch (err) {
+      console.error("Login error:", err);
       setError(
-        "Unable to connect to the TimeLens server."
+        err.message || "Unable to connect to the TimeLens server."
       );
     } finally {
       setLoading(false);

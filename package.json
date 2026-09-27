@@ -1,0 +1,14 @@
+{
+  "name": "timelens-fullstack",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TimeLens Full-Stack Productivity & Digital Time Intelligence Application",
+  "scripts": {
+    "install:all": "npm --prefix backend install && npm --prefix frontend install",
+    "build": "npm --prefix frontend install && npm --prefix frontend run build && npm --prefix backend install",
+    "start": "node backend/server.js",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "db:view": "node backend/view-db.js"
+  }
+}

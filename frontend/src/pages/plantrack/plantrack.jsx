@@ -24,6 +24,7 @@ import GlassCard from "../../components/glasscard";
 
 import {
   createDailyEntry,
+  updateDailyEntry,
   getDailyEntry,
   getLatestDailyEntry,
   createTask,
@@ -34,6 +35,7 @@ import {
   getActivities,
   stopActivity,
   getDailyAnalytics,
+  getLocalTodayString,
 } from "../../services/api";
 
 const FOCUS_TIME = 60 * 60;
@@ -298,86 +300,66 @@ function PlanTrack() {
   };
 
 
-  const addSmartTask = async () => {
-    if (
-      !dailyEntryId ||
-      !currentSmartPlan
-    ) {
-      setError(
-        "Daily plan is not ready yet."
-      );
+  const refreshEntryTasksAndAnalytics = async (entryId, dateStr) => {
+    if (!entryId) return;
+    const targetDate = dateStr || selectedDate || getLocalTodayString();
 
+    const [taskData, activityData, analyticsData] = await Promise.all([
+      getTasks(entryId).catch(() => ({ tasks: [] })),
+      getActivities(entryId).catch(() => ({ activities: [] })),
+      getDailyAnalytics(targetDate).catch(() => null),
+    ]);
+
+    setTasks(taskData?.tasks || taskData?.data || taskData || []);
+    setActivities(
+      activityData?.activities || activityData?.data || activityData || []
+    );
+    if (analyticsData) {
+      setAnalytics(analyticsData?.analytics || analyticsData?.data || analyticsData);
+    }
+  };
+
+  const addSmartTask = async () => {
+    if (!dailyEntryId || !currentSmartPlan) {
+      setError("Daily plan is not ready yet.");
       return;
     }
 
     try {
       setAddingSmartTask(true);
-
       setError("");
       setMessage("");
 
-      await createTask(
+      await createTask({
         dailyEntryId,
-        {
-          name:
-            currentSmartPlan.title,
+        taskName: currentSmartPlan.title,
+        plannedMinutes: currentSmartPlan.minutes,
+        priority: currentSmartPlan.priority,
+      });
 
-          minutes:
-            currentSmartPlan.minutes,
+      await refreshEntryTasksAndAnalytics(dailyEntryId, selectedDate);
 
-          priority:
-            currentSmartPlan.priority,
-        }
-      );
-
-      const taskData =
-        await getTasks(
-          dailyEntryId
-        );
-
-      setTasks(
-        taskData?.data ||
-        taskData ||
-        []
-      );
-
-      setMessage(
-        `"${currentSmartPlan.title}" added to your tasks.`
-      );
+      setMessage(`"${currentSmartPlan.title}" added to your tasks.`);
     } catch (err) {
       console.error(err);
-
-      setError(
-        "Unable to add the smart suggestion."
-      );
+      setError("Unable to add the smart suggestion.");
     } finally {
       setAddingSmartTask(false);
     }
   };
 
-
   /* =========================================================
      FOCUS TIMER
   ========================================================= */
 
-  const [focusSeconds, setFocusSeconds] =
-    useState(FOCUS_TIME);
-
-  const [focusRunning, setFocusRunning] =
-    useState(false);
-
-  const [focusPaused, setFocusPaused] =
-    useState(false);
-
-  const [selectedFocusTask, setSelectedFocusTask] =
-    useState("");
-
+  const [focusSeconds, setFocusSeconds] = useState(FOCUS_TIME);
+  const [focusRunning, setFocusRunning] = useState(false);
+  const [focusPaused, setFocusPaused] = useState(false);
+  const [selectedFocusTask, setSelectedFocusTask] = useState("");
+  const [activeFocusActivityId, setActiveFocusActivityId] = useState(null);
 
   useEffect(() => {
-    if (
-      !focusRunning ||
-      focusPaused
-    ) {
+    if (!focusRunning || focusPaused) {
       return;
     }
 
@@ -389,9 +371,34 @@ function PlanTrack() {
           setFocusRunning(false);
           setFocusPaused(false);
 
-          setMessage(
-            "Focus session completed. Great work!"
+          const matchedTask = tasks.find(
+            (t) =>
+              (t.name || t.task_name) === selectedFocusTask &&
+              !t.completed &&
+              t.status !== "completed"
           );
+
+          if (matchedTask) {
+            completeTask(
+              matchedTask.task_id || matchedTask.id || matchedTask._id,
+              60
+            )
+              .then(() =>
+                refreshEntryTasksAndAnalytics(dailyEntryId, selectedDate)
+              )
+              .catch(() => {});
+          }
+
+          if (activeFocusActivityId) {
+            stopActivity(activeFocusActivityId, 60)
+              .then(() =>
+                refreshEntryTasksAndAnalytics(dailyEntryId, selectedDate)
+              )
+              .catch(() => {});
+            setActiveFocusActivityId(null);
+          }
+
+          setMessage("Focus session completed. Great work!");
 
           return 0;
         }
@@ -400,122 +407,109 @@ function PlanTrack() {
       });
     }, 1000);
 
-    return () =>
-      clearInterval(timer);
-  }, [
-    focusRunning,
-    focusPaused,
-  ]);
+    return () => clearInterval(timer);
+  }, [focusRunning, focusPaused, selectedFocusTask, tasks, activeFocusActivityId, dailyEntryId, selectedDate]);
 
-
-  const startFocusTimer = () => {
+  const startFocusTimer = async () => {
     if (!selectedFocusTask) {
-      setError(
-        "Please select a task before starting the focus session."
-      );
-
+      setError("Please select a task before starting the focus session.");
       setMessage("");
-
       return;
     }
 
     if (focusSeconds === 0) {
-      setFocusSeconds(
-        FOCUS_TIME
-      );
+      setFocusSeconds(FOCUS_TIME);
     }
 
     setFocusRunning(true);
     setFocusPaused(false);
-
     setError("");
+    setMessage(`Focus session started for "${selectedFocusTask}".`);
 
-    setMessage(
-      `Focus session started for "${selectedFocusTask}".`
-    );
+    // Also mark the selected task as started in PostgreSQL and begin a focus activity
+    try {
+      const matchedTask = tasks.find(
+        (t) => (t.name || t.task_name) === selectedFocusTask
+      );
+      if (
+        matchedTask &&
+        matchedTask.status !== "in_progress" &&
+        matchedTask.status !== "completed"
+      ) {
+        await startTask(
+          matchedTask.task_id || matchedTask.id || matchedTask._id
+        );
+      }
+      if (dailyEntryId) {
+        const startedAct = await startActivity({
+          dailyEntryId,
+          activityName: `Focus: ${selectedFocusTask}`,
+          category: category || "Focus",
+          activityType: "productive",
+        });
+        const actObj = startedAct?.activity || startedAct?.data || startedAct;
+        if (actObj?.activity_id || actObj?.id) {
+          setActiveFocusActivityId(actObj.activity_id || actObj.id);
+        }
+        await refreshEntryTasksAndAnalytics(dailyEntryId, selectedDate);
+      }
+    } catch {
+      // Non-blocking
+    }
   };
-
 
   const pauseFocusTimer = () => {
     setFocusPaused(true);
-
-    setMessage(
-      "Focus session paused."
-    );
-
+    setMessage("Focus session paused.");
     setError("");
   };
-
 
   const resumeFocusTimer = () => {
     setFocusPaused(false);
-
-    setMessage(
-      "Focus session resumed."
-    );
-
+    setMessage("Focus session resumed.");
     setError("");
   };
-
 
   const resetFocusTimer = () => {
     setFocusRunning(false);
     setFocusPaused(false);
-
-    setFocusSeconds(
-      FOCUS_TIME
-    );
-
-    setMessage(
-      "Focus timer reset."
-    );
-
+    setFocusSeconds(FOCUS_TIME);
+    setMessage("Focus timer reset.");
     setError("");
   };
 
-
-  const stopFocusTimer = () => {
+  const stopFocusTimer = async () => {
+    const elapsedMinutes = Math.max(
+      1,
+      Math.round((FOCUS_TIME - focusSeconds) / 60)
+    );
     setFocusRunning(false);
     setFocusPaused(false);
-
-    setFocusSeconds(
-      FOCUS_TIME
-    );
-
-    setMessage(
-      "Focus session stopped."
-    );
-
+    setFocusSeconds(FOCUS_TIME);
+    setMessage("Focus session stopped.");
     setError("");
-  };
 
+    if (activeFocusActivityId) {
+      try {
+        await stopActivity(activeFocusActivityId, elapsedMinutes);
+        setActiveFocusActivityId(null);
+        await refreshEntryTasksAndAnalytics(dailyEntryId, selectedDate);
+      } catch {
+        // Ignore
+      }
+    }
+  };
 
   const formatFocusTime = () => {
-    const hours =
-      Math.floor(
-        focusSeconds / 3600
-      );
+    const hours = Math.floor(focusSeconds / 3600);
+    const minutes = Math.floor((focusSeconds % 3600) / 60);
+    const seconds = focusSeconds % 60;
 
-    const minutes =
-      Math.floor(
-        (focusSeconds % 3600) / 60
-      );
-
-    const seconds =
-      focusSeconds % 60;
-
-    return `${String(hours).padStart(
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(
       2,
       "0"
-    )}:${String(minutes).padStart(
-      2,
-      "0"
-    )}:${String(seconds).padStart(
-      2,
-      "0"
-    )}`;
+    )}:${String(seconds).padStart(2, "0")}`;
   };
-
 
   /* =========================================================
      LOAD DAILY DATA
@@ -526,168 +520,74 @@ function PlanTrack() {
       setLoading(true);
       setError("");
 
-      const storedUser =
-        localStorage.getItem(
-          "timelens_user"
-        );
+      const storedUser = localStorage.getItem("timelens_user");
+      const token = localStorage.getItem("timelens_token");
 
-      const token =
-        localStorage.getItem(
-          "timelens_token"
-        );
-
-      if (
-        !storedUser ||
-        !token
-      ) {
+      if (!storedUser || !token) {
         navigate("/auth");
         return;
       }
 
-      const parsedUser =
-        JSON.parse(
-          storedUser
-        );
-
+      const parsedUser = JSON.parse(storedUser);
       setUser(parsedUser);
 
-      const today =
-        new Date()
-          .toISOString()
-          .split("T")[0];
-
+      const today = getLocalTodayString();
       setSelectedDate(today);
 
-      let entry = null;
+      let entryResponse = null;
 
       try {
-        entry =
-          await getDailyEntry(
-            today
-          );
-      } catch (err) {
-        entry = null;
+        entryResponse = await getDailyEntry(today);
+      } catch {
+        entryResponse = null;
       }
 
-      if (!entry) {
-        try {
-          entry =
-            await getLatestDailyEntry();
-        } catch (err) {
-          entry = null;
-        }
-      }
-
-      if (!entry) {
-        entry =
-          await createDailyEntry({
-            date: today,
-            dayType: "Workday",
-            goal: "",
-            category: "Study",
-          });
+      if (!entryResponse) {
+        entryResponse = await createDailyEntry({
+          entryDate: today,
+          dayType: "Workday",
+          mainGoal: "",
+          goalCategory: "Study",
+        });
       }
 
       const entryData =
-        entry?.data ||
-        entry;
-
-      setDailyEntryId(
-        entryData?.id ||
-        entryData?._id ||
-        null
-      );
-
-      setDayType(
-        entryData?.dayType ||
-        "Workday"
-      );
-
-      setGoal(
-        entryData?.goal ||
-        ""
-      );
-
-      setCategory(
-        entryData?.category ||
-        "Study"
-      );
+        entryResponse?.entry || entryResponse?.data || entryResponse;
 
       const entryId =
-        entryData?.id ||
-        entryData?._id;
+        entryData?.daily_entry_id || entryData?.id || entryData?._id || null;
+
+      setDailyEntryId(entryId);
+      setDayType(entryData?.dayType || entryData?.day_type || "Workday");
+      setGoal(entryData?.goal || entryData?.main_goal || "");
+      setCategory(
+        entryData?.category || entryData?.goal_category || "Study"
+      );
 
       if (entryId) {
-        const taskData =
-          await getTasks(
-            entryId
-          );
-
-        setTasks(
-          taskData?.data ||
-          taskData ||
-          []
-        );
-
-        const activityData =
-          await getActivities(
-            entryId
-          );
-
-        setActivities(
-          activityData?.data ||
-          activityData ||
-          []
-        );
-
-        try {
-          const analyticsData =
-            await getDailyAnalytics(
-              entryId
-            );
-
-          setAnalytics(
-            analyticsData?.data ||
-            analyticsData ||
-            null
-          );
-        } catch (err) {
-          setAnalytics(null);
-        }
+        await refreshEntryTasksAndAnalytics(entryId, today);
       }
     } catch (err) {
       console.error(err);
-
-      setError(
-        "Unable to load your daily plan."
-      );
+      setError("Unable to load your daily plan.");
     } finally {
       setLoading(false);
     }
   };
 
-
   useEffect(() => {
     loadToday();
   }, []);
-
 
   /* =========================================================
      LOGOUT
   ========================================================= */
 
   const handleLogout = () => {
-    localStorage.removeItem(
-      "timelens_token"
-    );
-
-    localStorage.removeItem(
-      "timelens_user"
-    );
-
+    localStorage.removeItem("timelens_token");
+    localStorage.removeItem("timelens_user");
     navigate("/auth");
   };
-
 
   /* =========================================================
      SAVE DAILY PLAN
@@ -696,46 +596,38 @@ function PlanTrack() {
   const saveDailyPlan = async () => {
     try {
       setSavingPlan(true);
-
       setError("");
       setMessage("");
 
-      if (!dailyEntryId) {
-        const created =
-          await createDailyEntry({
-            date: selectedDate,
-            dayType,
-            goal,
-            category,
-          });
+      const targetDate = selectedDate || getLocalTodayString();
 
-        const createdData =
-          created?.data ||
-          created;
+      const saved = await updateDailyEntry({
+        entryDate: targetDate,
+        dayType,
+        mainGoal: goal,
+        goalCategory: category,
+      });
 
-        setDailyEntryId(
-          createdData?.id ||
-          createdData?._id
-        );
+      const savedEntry = saved?.entry || saved?.data || saved;
+      const entryId =
+        savedEntry?.daily_entry_id ||
+        savedEntry?.id ||
+        savedEntry?._id ||
+        dailyEntryId;
+
+      if (entryId) {
+        setDailyEntryId(entryId);
+        await refreshEntryTasksAndAnalytics(entryId, targetDate);
       }
 
-      setMessage(
-        "Daily plan saved successfully."
-      );
-
-      await loadToday();
-
+      setMessage("Daily plan saved successfully.");
     } catch (err) {
       console.error(err);
-
-      setError(
-        "Unable to save your daily plan."
-      );
+      setError("Unable to save your daily plan.");
     } finally {
       setSavingPlan(false);
     }
   };
-
 
   /* =========================================================
      TASKS
@@ -743,18 +635,12 @@ function PlanTrack() {
 
   const addTask = async () => {
     if (!taskName.trim()) {
-      setError(
-        "Please enter a task name."
-      );
-
+      setError("Please enter a task name.");
       return;
     }
 
     if (!dailyEntryId) {
-      setError(
-        "Daily plan is not ready yet."
-      );
-
+      setError("Daily plan is not ready yet.");
       return;
     }
 
@@ -762,244 +648,100 @@ function PlanTrack() {
       setError("");
       setMessage("");
 
-      await createTask(
+      await createTask({
         dailyEntryId,
-        {
-          name:
-            taskName.trim(),
-
-          minutes:
-            Number(taskMinutes),
-
-          priority:
-            taskPriority,
-        }
-      );
+        taskName: taskName.trim(),
+        plannedMinutes: Number(taskMinutes) || 30,
+        priority: taskPriority,
+      });
 
       setTaskName("");
       setTaskMinutes(60);
-      setTaskPriority(
-        "Medium"
-      );
+      setTaskPriority("Medium");
 
-      const taskData =
-        await getTasks(
-          dailyEntryId
-        );
+      await refreshEntryTasksAndAnalytics(dailyEntryId, selectedDate);
 
-      setTasks(
-        taskData?.data ||
-        taskData ||
-        []
-      );
-
-      setMessage(
-        "Task added successfully."
-      );
+      setMessage("Task added successfully.");
     } catch (err) {
       console.error(err);
-
-      setError(
-        "Unable to add the task."
-      );
+      setError("Unable to add the task.");
     }
   };
 
+  const handleStartTask = async (task) => {
+    try {
+      const id = task.task_id || task.id || task._id;
+      await startTask(id);
+      await refreshEntryTasksAndAnalytics(dailyEntryId, selectedDate);
+      setMessage(`Started "${task.name || task.task_name}".`);
+      setError("");
+    } catch (err) {
+      console.error(err);
+      setError("Unable to start the task.");
+    }
+  };
 
-  const handleStartTask =
-    async (task) => {
-      try {
-        await startTask(
-          task.id ||
-          task._id
-        );
-
-        const taskData =
-          await getTasks(
-            dailyEntryId
-          );
-
-        setTasks(
-          taskData?.data ||
-          taskData ||
-          []
-        );
-
-        setMessage(
-          `Started "${task.name}".`
-        );
-
-        setError("");
-      } catch (err) {
-        console.error(err);
-
-        setError(
-          "Unable to start the task."
-        );
-      }
-    };
-
-
-  const handleCompleteTask =
-    async (task) => {
-      try {
-        await completeTask(
-          task.id ||
-          task._id
-        );
-
-        const taskData =
-          await getTasks(
-            dailyEntryId
-          );
-
-        setTasks(
-          taskData?.data ||
-          taskData ||
-          []
-        );
-
-        if (dailyEntryId) {
-          try {
-            const analyticsData =
-              await getDailyAnalytics(
-                dailyEntryId
-              );
-
-            setAnalytics(
-              analyticsData?.data ||
-              analyticsData ||
-              null
-            );
-          } catch (err) {
-            console.error(err);
-          }
-        }
-
-        setMessage(
-          `"${task.name}" completed.`
-        );
-
-        setError("");
-      } catch (err) {
-        console.error(err);
-
-        setError(
-          "Unable to complete the task."
-        );
-      }
-    };
-
+  const handleCompleteTask = async (task) => {
+    try {
+      const id = task.task_id || task.id || task._id;
+      await completeTask(id);
+      await refreshEntryTasksAndAnalytics(dailyEntryId, selectedDate);
+      setMessage(`"${task.name || task.task_name}" completed.`);
+      setError("");
+    } catch (err) {
+      console.error(err);
+      setError("Unable to complete the task.");
+    }
+  };
 
   /* =========================================================
      ACTIVITIES
   ========================================================= */
 
-  const handleStartActivity =
-    async () => {
-      if (!activityName.trim()) {
-        setError(
-          "Please enter an activity name."
-        );
+  const handleStartActivity = async () => {
+    if (!activityName.trim()) {
+      setError("Please enter an activity name.");
+      return;
+    }
 
-        return;
-      }
+    if (!dailyEntryId) {
+      setError("Daily plan is not ready yet.");
+      return;
+    }
 
-      if (!dailyEntryId) {
-        setError(
-          "Daily plan is not ready yet."
-        );
+    try {
+      await startActivity({
+        dailyEntryId,
+        activityName: activityName.trim(),
+        category: category || "General",
+        activityType:
+          activityType === "recreation" ? "recreational" : activityType,
+      });
 
-        return;
-      }
+      setActivityName("");
 
-      try {
-        await startActivity(
-          dailyEntryId,
-          {
-            name:
-              activityName.trim(),
+      await refreshEntryTasksAndAnalytics(dailyEntryId, selectedDate);
 
-            type:
-              activityType,
-          }
-        );
+      setMessage("Activity started.");
+      setError("");
+    } catch (err) {
+      console.error(err);
+      setError("Unable to start activity.");
+    }
+  };
 
-        setActivityName("");
-
-        const activityData =
-          await getActivities(
-            dailyEntryId
-          );
-
-        setActivities(
-          activityData?.data ||
-          activityData ||
-          []
-        );
-
-        setMessage(
-          "Activity started."
-        );
-
-        setError("");
-      } catch (err) {
-        console.error(err);
-
-        setError(
-          "Unable to start activity."
-        );
-      }
-    };
-
-
-  const handleStopActivity =
-    async (activity) => {
-      try {
-        await stopActivity(
-          activity.id ||
-          activity._id
-        );
-
-        const activityData =
-          await getActivities(
-            dailyEntryId
-          );
-
-        setActivities(
-          activityData?.data ||
-          activityData ||
-          []
-        );
-
-        try {
-          const analyticsData =
-            await getDailyAnalytics(
-              dailyEntryId
-            );
-
-          setAnalytics(
-            analyticsData?.data ||
-            analyticsData ||
-            null
-          );
-        } catch (err) {
-          console.error(err);
-        }
-
-        setMessage(
-          "Activity stopped."
-        );
-
-        setError("");
-      } catch (err) {
-        console.error(err);
-
-        setError(
-          "Unable to stop activity."
-        );
-      }
-    };
+  const handleStopActivity = async (activity) => {
+    try {
+      const id = activity.activity_id || activity.id || activity._id;
+      await stopActivity(id);
+      await refreshEntryTasksAndAnalytics(dailyEntryId, selectedDate);
+      setMessage("Activity stopped.");
+      setError("");
+    } catch (err) {
+      console.error(err);
+      setError("Unable to stop activity.");
+    }
+  };
 
 
   /* =========================================================
@@ -1398,8 +1140,7 @@ function PlanTrack() {
 
               <Sparkles size={15} />
 
-              Smart suggestions are currently
-              sample recommendations.
+              Smart suggestions adapt to your selected daily goal category and save directly to your plan.
 
             </div>
 
@@ -1897,12 +1638,10 @@ function PlanTrack() {
                         "Completed";
 
                     const running =
-                      task.status ===
-                        "running" ||
-                      task.status ===
-                        "Running" ||
-                      task.started ===
-                        true;
+                      task.status === "in_progress" ||
+                      task.status === "running" ||
+                      task.status === "Running" ||
+                      task.started === true;
 
                     return (
                       <div
@@ -1912,6 +1651,7 @@ function PlanTrack() {
                             : ""
                         }`}
                         key={
+                          task.task_id ||
                           task.id ||
                           task._id
                         }
@@ -1920,7 +1660,7 @@ function PlanTrack() {
                         <div className="task-info">
 
                           <strong>
-                            {task.name}
+                            {task.name || task.task_name}
                           </strong>
 
 
@@ -1931,6 +1671,7 @@ function PlanTrack() {
                               <Clock3 size={13} />
 
                               {task.minutes ||
+                                task.planned_minutes ||
                                 task.duration ||
                                 0}{" "}
                               min
@@ -1942,6 +1683,12 @@ function PlanTrack() {
                               {task.priority ||
                                 "Medium"}
                             </span>
+
+                            {running && (
+                              <span className="activity-status">
+                                In Progress
+                              </span>
+                            )}
 
                           </div>
 
@@ -1968,7 +1715,7 @@ function PlanTrack() {
                             )}
 
 
-                          {running && (
+                          {!completed && (
                             <button
                               className="warm-icon-button"
                               onClick={() =>
@@ -2080,7 +1827,7 @@ function PlanTrack() {
                     Productive
                   </option>
 
-                  <option value="recreation">
+                  <option value="recreational">
                     Recreation
                   </option>
 
@@ -2113,6 +1860,7 @@ function PlanTrack() {
                   (activity) => {
 
                     const active =
+                      activity.end_time === null ||
                       activity.status ===
                         "running" ||
                       activity.status ===
@@ -2124,6 +1872,7 @@ function PlanTrack() {
                       <div
                         className="task-row"
                         key={
+                          activity.activity_id ||
                           activity.id ||
                           activity._id
                         }
@@ -2132,7 +1881,7 @@ function PlanTrack() {
                         <div className="task-info">
 
                           <strong>
-                            {activity.name}
+                            {activity.name || activity.activity_name}
                           </strong>
 
 
@@ -2140,16 +1889,24 @@ function PlanTrack() {
 
                             <span
                               className={
-                                activity.type ===
+                                (activity.type || activity.activity_type) ===
                                 "productive"
                                   ? "productive-text"
                                   : "recreation-text"
                               }
                             >
                               {activity.type ||
+                                activity.activity_type ||
                                 activity.activityType}
                             </span>
 
+                            <span>
+                              <Clock3 size={13} />
+                              {activity.duration_minutes ||
+                                activity.duration ||
+                                1}{" "}
+                              min
+                            </span>
 
                             {active && (
                               <span className="activity-status">

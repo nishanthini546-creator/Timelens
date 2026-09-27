@@ -2,8 +2,8 @@ const {
   createActivity,
   getActivities,
   stopActivity,
+  deleteActivity,
 } = require("../models/activityModel");
-
 
 /* ---------- Start Activity ---------- */
 
@@ -11,30 +11,38 @@ const start = async (req, res) => {
   try {
     const userId = req.user.userId;
 
-    const {
-      dailyEntryId,
-      activityName,
-      category,
-      activityType,
-    } = req.body;
+    const dailyEntryId =
+      req.body.dailyEntryId ||
+      req.body.daily_entry_id ||
+      req.body.entryId;
 
-    if (
-      !dailyEntryId ||
-      !activityName ||
-      !category ||
-      !activityType
-    ) {
+    const activityName =
+      req.body.activityName ||
+      req.body.name ||
+      req.body.title;
+
+    const category =
+      req.body.category ||
+      (req.body.type === "recreation" || req.body.type === "recreational"
+        ? "Recreation"
+        : "Focus");
+
+    const activityType =
+      req.body.activityType ||
+      req.body.type ||
+      "productive";
+
+    if (!dailyEntryId || !activityName) {
       return res.status(400).json({
         success: false,
-        message:
-          "Daily entry, activity name, category and activity type are required.",
+        message: "Daily entry and activity name are required.",
       });
     }
 
     const activity = await createActivity({
       userId,
-      dailyEntryId,
-      activityName: activityName.trim(),
+      dailyEntryId: Number(dailyEntryId),
+      activityName: String(activityName).trim(),
       category,
       activityType,
     });
@@ -43,13 +51,10 @@ const start = async (req, res) => {
       success: true,
       message: "Activity started.",
       activity,
+      data: activity,
     });
-
   } catch (error) {
-    console.error(
-      "Start activity error:",
-      error
-    );
+    console.error("Start activity error:", error);
 
     res.status(500).json({
       success: false,
@@ -58,16 +63,12 @@ const start = async (req, res) => {
   }
 };
 
-
 /* ---------- Get Activities ---------- */
 
 const getAll = async (req, res) => {
   try {
     const userId = req.user.userId;
-
-    const {
-      dailyEntryId,
-    } = req.params;
+    const { dailyEntryId } = req.params;
 
     if (!dailyEntryId) {
       return res.status(400).json({
@@ -76,21 +77,15 @@ const getAll = async (req, res) => {
       });
     }
 
-    const activities = await getActivities(
-      userId,
-      dailyEntryId
-    );
+    const activities = await getActivities(userId, Number(dailyEntryId));
 
     res.json({
       success: true,
       activities,
+      data: activities,
     });
-
   } catch (error) {
-    console.error(
-      "Get activities error:",
-      error
-    );
+    console.error("Get activities error:", error);
 
     res.status(500).json({
       success: false,
@@ -99,16 +94,13 @@ const getAll = async (req, res) => {
   }
 };
 
-
 /* ---------- Stop Activity ---------- */
 
 const stop = async (req, res) => {
   try {
     const userId = req.user.userId;
-
-    const {
-      activityId,
-    } = req.params;
+    const { activityId } = req.params;
+    const explicitDuration = req.body?.durationMinutes || req.body?.duration || null;
 
     if (!activityId) {
       return res.status(400).json({
@@ -119,14 +111,14 @@ const stop = async (req, res) => {
 
     const activity = await stopActivity(
       userId,
-      activityId
+      Number(activityId),
+      explicitDuration
     );
 
     if (!activity) {
       return res.status(404).json({
         success: false,
-        message:
-          "Activity not found or has already been stopped.",
+        message: "Activity not found or has already been stopped.",
       });
     }
 
@@ -134,13 +126,10 @@ const stop = async (req, res) => {
       success: true,
       message: "Activity stopped.",
       activity,
+      data: activity,
     });
-
   } catch (error) {
-    console.error(
-      "Stop activity error:",
-      error
-    );
+    console.error("Stop activity error:", error);
 
     res.status(500).json({
       success: false,
@@ -149,11 +138,39 @@ const stop = async (req, res) => {
   }
 };
 
+/* ---------- Delete Activity ---------- */
 
-/* ---------- Export ---------- */
+const remove = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { activityId } = req.params;
+
+    const deleted = await deleteActivity(userId, Number(activityId));
+
+    if (!deleted) {
+      return res.status(404).json({
+        success: false,
+        message: "Activity not found.",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Activity removed.",
+      activity: deleted,
+    });
+  } catch (error) {
+    console.error("Delete activity error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Unable to delete activity.",
+    });
+  }
+};
 
 module.exports = {
   start,
   getAll,
   stop,
+  remove,
 };
